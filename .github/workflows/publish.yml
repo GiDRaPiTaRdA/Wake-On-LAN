@@ -1,0 +1,87 @@
+
+name: Publish PowerShell Script
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  publish:
+    name: Publish to PowerShell Gallery
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Validate script
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+
+          $path = './Send-WakeOnLan.ps1'
+
+          if (-not (Test-Path $path)) {
+              throw "Script not found: $path"
+          }
+
+          # Check PowerShell syntax
+          $tokens = $null
+          $errors = $null
+
+          [System.Management.Automation.Language.Parser]::ParseFile(
+              (Resolve-Path $path).Path,
+              [ref]$tokens,
+              [ref]$errors
+          ) | Out-Null
+
+          if ($errors.Count -gt 0) {
+              $errors | ForEach-Object { Write-Error $_ }
+              throw 'PowerShell syntax validation failed.'
+          }
+
+          # Check Gallery metadata
+          Import-Module PowerShellGet
+          $info = Test-ScriptFileInfo -Path $path
+
+          # Match script version to Git tag
+          if ($env:GITHUB_REF_TYPE -eq 'tag') {
+              $tag = $env:GITHUB_REF_NAME
+              if ($tag -notmatch '^v\d+\.\d+\.\d+$') {
+                  throw "Invalid version tag: $tag"
+              }
+
+              $tagVersion = $tag.Substring(1)
+
+              if ([version]$info.Version -ne [version]$tagVersion) {
+                  throw "Script version must match tag $tag"
+              }
+          }
+
+          Write-Host "Validation passed: $($info.Name) v$($info.Version)"
+
+      - name: Publish to PowerShell Gallery
+        shell: pwsh
+        env:
+          PSGALLERY_API_KEY: ${{ secrets.PSGALLERY_API_KEY }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+
+          if ([string]::IsNullOrWhiteSpace($env:PSGALLERY_API_KEY)) {
+              throw 'PowerShell Gallery API key is missing.'
+          }
+
+          Import-Module PowerShellGet
+
+          Publish-Script `
+              -Path './Send-WakeOnLan.ps1' `
+              -NuGetApiKey $env:PSGALLERY_API_KEY `
+              -Repository PSGallery `
+              -ErrorAction Stop
+
+          Write-Host 'Published to PowerShell Gallery!'
