@@ -6,8 +6,6 @@
 
 .AUTHOR Sha256Encrypted
 
-.DESCRIPTION Sends a Wake-on-LAN magic packet to a network device.
-
 .TAGS WakeOnLan WOL Network UDP Windows
 
 #>
